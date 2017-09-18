@@ -44,14 +44,13 @@ def web(chatbotname):
         os.mkdir(chatbot_log_path)
     json_filename = os.path.join(chatbot_log_path, "{}.json".format(chat_id))
 
+    log = []
     if os.path.exists(json_filename):
         with open(json_filename) as data_file:
             try:
                 log = json.load(data_file)
             except:
                 pass
-    else:
-        log = []
 
     if len(log) > 0:
         response_context = log[-1]["context"]
