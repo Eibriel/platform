@@ -1,4 +1,6 @@
 import os
+import re
+import requests
 
 from flask import abort
 from flask import request
@@ -24,9 +26,9 @@ main = Blueprint('main', __name__)
 #/monitor/chatbot-name
 
 
-def callSendAPI(messageData):
+def callSendAPI(messageData, chatbotname):
     headers = {'user-agent': 'rDany', 'Content-Type': 'application/json'}
-    page_access_token = app.config["PAGE_ACCESS_TOKEN"]
+    page_access_token = app.config["CHATBOTS"][chatbotname]["facebook"]["PAGE_ACCESS_TOKEN"]
     r = None
     while 1:
         try:
@@ -48,7 +50,7 @@ def callSendAPI(messageData):
     return r
 
 
-def facebookSendTextMessage(recipientId, messageText):
+def facebookSendTextMessage(recipientId, messageText, chatbotname):
     messageData = {
         'recipient': {
           'id': recipientId
@@ -57,8 +59,24 @@ def facebookSendTextMessage(recipientId, messageText):
           'text': messageText
         }
       }
-    callSendAPI(messageData)
+    callSendAPI(messageData, chatbotname)
 
+
+def facebookSendImageMessage(recipientId, imageURL, chatbotname):
+    messageData = {
+        'recipient': {
+            'id': recipientId
+        },
+        'message': {
+            'attachment':{
+                'type':'image',
+                'payload':{
+                    'url': imageURL
+                }
+            }
+        }
+    }
+    callSendAPI(messageData, chatbotname)
 
 
 def facebookReceivedMessage(message):
@@ -73,6 +91,8 @@ def facebookReceivedMessage(message):
 
 
 def get_watson_response(wat, chatbotname, chat_id, m):
+    with open("log/Output.txt", "w") as text_file:
+        text_file.write(str(m))
     # Load context
     chatbot_log_path = os.path.join("log", chatbotname)
     if not os.path.isdir(chatbot_log_path):
@@ -160,12 +180,18 @@ def web(chatbotname, messenger):
                     for message in entries['messaging']:
                         if "message" in message:
                             senderId = message['sender']['id']
-                            m = message['message']
-                            #watson_response = wat.send_to_watson ({'text': m}, response_context)
+                            m = message["message"]["text"]
+                            if m == '/start':
+                                m = None
                             watson_response = get_watson_response (wat, chatbotname, senderId, m)
                             recipientId = senderId
                             for watson_message in watson_response["output"]["text"]:
-                                facebookSendTextMessage(recipientId, watson_message)
+                                if watson_message.startswith("!["):
+                                    get_url = re.search(r"\!\[.*\]\((?P<url>.+?)\)", watson_message)
+                                    if get_url:
+                                        facebookSendImageMessage(recipientId, get_url.group('url'), chatbotname)
+                                else:
+                                    facebookSendTextMessage(recipientId, markdown_facebook(watson_message), chatbotname)
                         else:
                             pass
         return jsonify({})
@@ -177,15 +203,36 @@ def web(chatbotname, messenger):
                 'method': "sendMessage",
                 'chat_id': msg["message"]["chat"]["id"],
                 'text': "*Hi there!*",
-                #'parse_mode': 'Markdown',
+                'parse_mode': 'Markdown',
                 'disable_web_page_preview': True
         }
         if msg["message"]["text"] == '/start':
             msg["message"]["text"] = None
         watson_response = get_watson_response (wat, chatbotname, msg["message"]["chat"]["id"], msg["message"]["text"])
 
-        answer["text"] = "\n\n".join(watson_response["output"]["text"])
+        answer["text"] = markdown_telegram("\n\n".join(watson_response["output"]["text"]))
         return jsonify(answer)
 
+def markdown_telegram(text):
+    text = text.replace('<em>', '_')
+    text = text.replace('</em>', '_')
+    text = text.replace('<strong>', '*')
+    text = text.replace('</strong>', '*')
+    return text
 
+def markdown_facebook(text):
+    text = text.replace('<em>', '')
+    text = text.replace('</em>', '')
+    text = text.replace('<strong>', '')
+    text = text.replace('</strong>', '')
 
+    reg = r"\[(?P<alt>.*?)\]\((?P<url>.+?)\)(?P<target>\^*)"
+    get_url = re.search(reg, text)
+    while get_url:
+        alt = get_url.group('alt')
+        url = get_url.group('url')
+        target = get_url.group('target')
+        text = text.replace('[{}]({}){}'.format(alt, url, target), '{} ({})'.format(alt, url))
+        get_url = re.search(reg, text)
+
+    return text
