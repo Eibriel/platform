@@ -90,6 +90,13 @@ def facebookReceivedMessage(message):
     facebookSendTextMessage(recipientID, )
 
 
+def facebookConfigureBot(chatbotname):
+    configData = {
+        'get_started': 'payload'
+    }
+    callSendAPI(configData, chatbotname)
+
+
 def get_watson_response(wat, chatbotname, chat_id, m):
     with open("log/Output.txt", "w") as text_file:
         text_file.write(str(m))
@@ -178,11 +185,20 @@ def web(chatbotname, messenger):
             if msg['object'] == 'page':
                 for entries in msg['entry']:
                     for message in entries['messaging']:
+                        needs_answer = False
                         if "message" in message:
                             senderId = message['sender']['id']
                             m = message["message"]["text"]
+                            needs_answer = True
+                        elif "postback" in message:
+                            senderId = message['sender']['id']
+                            m = None
+                            needs_answer = True
+                        if needs_answer:
                             if m == '/start':
                                 m = None
+                            if m == '/configure':
+                               facebookConfigureBot(chatbotname) 
                             watson_response = get_watson_response (wat, chatbotname, senderId, m)
                             recipientId = senderId
                             for watson_message in watson_response["output"]["text"]:
@@ -192,8 +208,6 @@ def web(chatbotname, messenger):
                                         facebookSendImageMessage(recipientId, get_url.group('url'), chatbotname)
                                 else:
                                     facebookSendTextMessage(recipientId, markdown_facebook(watson_message), chatbotname)
-                        else:
-                            pass
         return jsonify({})
     elif messenger == 'telegram':
         msg = request.json
