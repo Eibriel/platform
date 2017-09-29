@@ -26,13 +26,14 @@ main = Blueprint('main', __name__)
 #/monitor/chatbot-name
 
 
-def callSendAPI(messageData, chatbotname):
-    headers = {'user-agent': 'rDany', 'Content-Type': 'application/json'}
+def callSendAPI(messageData, chatbotname, endpoint = "messages"):
+    headers = {'user-agent': 'Eibriel Platform', 'Content-Type': 'application/json'}
     page_access_token = app.config["CHATBOTS"][chatbotname]["facebook"]["PAGE_ACCESS_TOKEN"]
+    page_id = app.config["CHATBOTS"][chatbotname]["facebook"]["PAGE_ID"]
     r = None
     while 1:
         try:
-            r = requests.post('https://graph.facebook.com/v2.6/me/messages?access_token={}'.format(page_access_token), data=json.dumps(messageData), headers=headers)
+            r = requests.post('https://graph.facebook.com/v2.10/{}/{}?access_token={}'.format(page_id, endpoint, page_access_token), data=json.dumps(messageData), headers=headers)
             break
         except requests.exceptions.ConnectionError:
             raise
@@ -92,9 +93,11 @@ def facebookReceivedMessage(message):
 
 def facebookConfigureBot(chatbotname):
     configData = {
-        'get_started': 'payload'
+        'get_started': {
+            'payload': 'Get Started'
+        }
     }
-    callSendAPI(configData, chatbotname)
+    callSendAPI(configData, chatbotname, endpoint = "messenger_profile")
 
 
 def get_watson_response(wat, chatbotname, chat_id, m):
