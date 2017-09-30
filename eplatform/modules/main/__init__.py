@@ -100,9 +100,45 @@ def facebookConfigureBot(chatbotname):
     callSendAPI(configData, chatbotname, endpoint = "messenger_profile")
 
 
+def telegramCallSendAPI(access_point, chatbotname, data=None):
+    headers = {'user-agent': "Eibriel platform"}
+    token = app.config["CHATBOTS"][chatbotname]["telegram"]["token"]
+    try:
+        r = requests.get('https://api.telegram.org/bot{0}/{1}'.format(token, access_point), data=data, timeout=40, headers=headers)
+    except requests.exceptions.ConnectionError:
+        return None
+    except requests.exceptions.Timeout:
+        return None
+    return r
+
+
+def telegramSendTextMessage(chat_id, answer, chatbotname):
+    msg = {
+        'chat_id': chat_id,
+        'parse_mode': 'Markdown',
+        'text': answer,
+    }
+    telegramCallSendAPI('sendMessage', chatbotname, data = msg)
+
+
+def telegramSendImageMessage(chat_id, image_url, chatbotname):
+    if image_url.endswith(".gif") and False:
+        msg = {
+            'chat_id': chat_id,
+            'document': image_url,
+        }
+        telegramCallSendAPI('sendDocument', chatbotname, data = msg)
+    else:
+        msg = {
+            'chat_id': chat_id,
+            'photo': image_url,
+        }
+        telegramCallSendAPI('sendPhoto', chatbotname, data = msg)
+    #telegramCallSendAPI('sendPhoto', chatbotname, files={'photo':(photo_name, img)}, data = msg)
+    
+
+
 def get_watson_response(wat, chatbotname, chat_id, m):
-    with open("log/Output.txt", "w") as text_file:
-        text_file.write(str(m))
     # Load context
     chatbot_log_path = os.path.join("log", chatbotname)
     if not os.path.isdir(chatbot_log_path):
@@ -121,20 +157,25 @@ def get_watson_response(wat, chatbotname, chat_id, m):
     if len(log) > 0:
         response_context = log[-1]["context"]
 
+    watson_responses = []
     if m is None:
-        watson_response = wat.send_to_watson ({})
+        watson_responses.append(wat.send_to_watson ({}))
+    elif m == "[read]":
+        if len(log) == 0:
+            watson_responses.append(wat.send_to_watson ({}))
     else:
         if response_context == None:
-            watson_response = wat.send_to_watson ({})
-            response_context = watson_response["context"]
-        watson_response = wat.send_to_watson ({'text': m}, response_context)
+            watson_responses.append(wat.send_to_watson ({}))
+            response_context = watson_responses[-1]["context"]
+        else:
+            watson_responses.append(wat.send_to_watson ({'text': m}, response_context))
 
     #print (watson_response)
 
-    log.append(watson_response)
+    log = log + watson_responses
     with open(json_filename, 'w') as data_file:
         json.dump(log, data_file, sort_keys=True, indent=4, separators=(',', ': '))
-    return watson_response
+    return watson_responses
 
 
 @main.route('/api/<chatbotname>/<messenger>', methods=['GET', 'POST'])
@@ -170,10 +211,13 @@ def web(chatbotname, messenger):
 
         chat_id = request.form.get("chat_id")
 
-        watson_response = get_watson_response (wat, chatbotname, chat_id, m)
+        messages = []
+        watson_responses = get_watson_response (wat, chatbotname, chat_id, m)
+        for watson_response in watson_responses:
+            messages = messages + watson_response["output"]["text"]
 
         message = {
-            "message": watson_response["output"]["text"]
+            "message": messages
         }
 
         json_response = json.dumps(message)
@@ -185,13 +229,23 @@ def web(chatbotname, messenger):
     elif messenger == 'facebook':
         if request.method == 'POST':
             msg = request.json
+            with open("log/Output.txt", "w") as text_file:
+                text_file.write(str(msg))
             if msg['object'] == 'page':
                 for entries in msg['entry']:
                     for message in entries['messaging']:
                         needs_answer = False
                         if "message" in message:
                             senderId = message['sender']['id']
-                            m = message["message"]["text"]
+                            if "text" in message["message"]:
+                                m = message["message"]["text"]
+                                needs_answer = True
+                            elif "sticker_id" in message["message"]:
+                                m = "sticker_id {}".format(message["message"]["sticker_id"])
+                                needs_answer = True
+                        elif "read" in message:
+                            senderId = message['sender']['id']
+                            m = "[read]"
                             needs_answer = True
                         elif "postback" in message:
                             senderId = message['sender']['id']
@@ -202,19 +256,21 @@ def web(chatbotname, messenger):
                                 m = None
                             if m == '/configure':
                                facebookConfigureBot(chatbotname) 
-                            watson_response = get_watson_response (wat, chatbotname, senderId, m)
+                            watson_responses = get_watson_response (wat, chatbotname, senderId, m)
                             recipientId = senderId
-                            for watson_message in watson_response["output"]["text"]:
-                                if watson_message.startswith("!["):
-                                    get_url = re.search(r"\!\[.*\]\((?P<url>.+?)\)", watson_message)
-                                    if get_url:
-                                        facebookSendImageMessage(recipientId, get_url.group('url'), chatbotname)
-                                else:
-                                    facebookSendTextMessage(recipientId, markdown_facebook(watson_message), chatbotname)
+                            for watson_response in watson_responses:
+                                for watson_message in watson_response["output"]["text"]:
+                                    img_url = extract_image(watson_message)
+                                    if img_url:
+                                        facebookSendImageMessage(recipientId, img_url, chatbotname)
+                                    else:
+                                        facebookSendTextMessage(recipientId, markdown_facebook(watson_message), chatbotname)
         return jsonify({})
     elif messenger == 'telegram':
         msg = request.json
         if "message" not in msg:
+            return jsonify({})
+        if "text" not in msg["message"]:
             return jsonify({})
         answer = {
                 'method': "sendMessage",
@@ -225,10 +281,20 @@ def web(chatbotname, messenger):
         }
         if msg["message"]["text"] == '/start':
             msg["message"]["text"] = None
-        watson_response = get_watson_response (wat, chatbotname, msg["message"]["chat"]["id"], msg["message"]["text"])
-
-        answer["text"] = markdown_telegram("\n\n".join(watson_response["output"]["text"]))
-        return jsonify(answer)
+        chat_id = msg["message"]["chat"]["id"]
+        watson_responses = get_watson_response (wat, chatbotname, chat_id, msg["message"]["text"])
+        messages = []
+        for watson_response in watson_responses:
+            messages = messages + watson_response["output"]["text"]
+            for message in messages:
+                img_url = extract_image(message)
+                if img_url:
+                    telegramSendImageMessage(chat_id, img_url, chatbotname)
+                else:
+                    telegramSendTextMessage(chat_id, markdown_telegram(message), chatbotname)
+        #answer["text"] = markdown_telegram("\n\n".join(messages))
+        #return jsonify(answer)
+        return jsonify({})
 
 def markdown_telegram(text):
     text = text.replace('<em>', '_')
@@ -253,3 +319,10 @@ def markdown_facebook(text):
         get_url = re.search(reg, text)
 
     return text
+
+def extract_image(message):
+    if message.startswith("!["):
+        get_url = re.search(r"\!\[.*\]\((?P<url>.+?)\)", message)
+        if get_url:
+            return get_url.group('url')
+    return False
