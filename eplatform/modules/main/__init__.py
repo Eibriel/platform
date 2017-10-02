@@ -95,7 +95,16 @@ def facebookConfigureBot(chatbotname):
     configData = {
         'get_started': {
             'payload': 'Get Started'
-        }
+        },
+        "greeting": [
+            {
+                "locale":"default",
+                "text":"Eibriel presenta..."
+            }, {
+                "locale":"es_LA",
+                "text":"Eibriel presenta..."
+            }
+        ]  
     }
     callSendAPI(configData, chatbotname, endpoint = "messenger_profile")
 
@@ -122,12 +131,12 @@ def telegramSendTextMessage(chat_id, answer, chatbotname):
 
 
 def telegramSendImageMessage(chat_id, image_url, chatbotname):
-    if image_url.endswith(".gif") and False:
+    if image_url.endswith("giphy.gif"):
         msg = {
             'chat_id': chat_id,
-            'document': image_url,
+            'video': image_url,
         }
-        telegramCallSendAPI('sendDocument', chatbotname, data = msg)
+        telegramCallSendAPI('sendVideo', chatbotname, data = msg)
     else:
         msg = {
             'chat_id': chat_id,
@@ -160,9 +169,8 @@ def get_watson_response(wat, chatbotname, chat_id, m):
     watson_responses = []
     if m is None:
         watson_responses.append(wat.send_to_watson ({}))
-    elif m == "[read]":
-        if len(log) == 0:
-            watson_responses.append(wat.send_to_watson ({}))
+    elif len(log) == 0:
+        watson_responses.append(wat.send_to_watson ({}))
     else:
         if response_context == None:
             watson_responses.append(wat.send_to_watson ({}))
@@ -229,7 +237,7 @@ def web(chatbotname, messenger):
     elif messenger == 'facebook':
         if request.method == 'POST':
             msg = request.json
-            with open("log/Output.txt", "w") as text_file:
+            with open("log/Output.txt", "a") as text_file:
                 text_file.write(str(msg))
             if msg['object'] == 'page':
                 for entries in msg['entry']:
@@ -246,11 +254,12 @@ def web(chatbotname, messenger):
                         elif "read" in message:
                             senderId = message['sender']['id']
                             m = "[read]"
-                            needs_answer = True
+                            #needs_answer = True
                         elif "postback" in message:
-                            senderId = message['sender']['id']
-                            m = None
-                            needs_answer = True
+                            if message["postback"].get("payload") == "Get Started":
+                                senderId = message['sender']['id']
+                                m = None
+                                needs_answer = True
                         if needs_answer:
                             if m == '/start':
                                 m = None
