@@ -28,6 +28,9 @@ main = Blueprint('main', __name__)
 
 
 def callSendAPI(messageData, chatbotname, endpoint = "messages"):
+    with open("log/Output.txt", "a") as text_file:
+        text_file.write("\n\n")
+        text_file.write(str(messageData))
     headers = {'user-agent': 'Eibriel Platform', 'Content-Type': 'application/json'}
     page_access_token = app.config["CHATBOTS"][chatbotname]["facebook"]["PAGE_ACCESS_TOKEN"]
     page_id = app.config["CHATBOTS"][chatbotname]["facebook"]["PAGE_ID"]
@@ -64,9 +67,7 @@ def facebookSendTextMessage(recipientId, messageText, chatbotname):
     callSendAPI(messageData, chatbotname)
 
 
-def facebookSendImageMessage(recipientId, imageURL, chatbotname):
-    cache_path = file_url_to_chache_path("facebook", "image", imageURL, recipientId)
-    cache_data = get_cache(cache_path)
+def facebookSendImageMessage(recipientId, payload, chatbotname):
     messageData = {
         'recipient': {
             'id': recipientId
@@ -74,17 +75,12 @@ def facebookSendImageMessage(recipientId, imageURL, chatbotname):
         'message': {
             'attachment':{
                 'type':'image',
-                'payload':{}
+                'payload':payload
             }
         }
     }
-    if cache_data:
-        messageData["message"]["attachment"]["payload"]["attachment_id"] = cache_data["file_id"]
-    else:
-        messageData["message"]["attachment"]["payload"]["url"] = imageURL
-        messageData["message"]["attachment"]["payload"]["is_reusable"] = True
     r = callSendAPI(messageData, chatbotname)
-    set_cache(cache_path, "facebook", "image", imageURL, r)
+    return r
 
 
 def facebookSendAudioMessage(recipientId, payload, chatbotname):
@@ -103,21 +99,23 @@ def facebookSendAudioMessage(recipientId, payload, chatbotname):
     return r
 
 
-def facebookSendFile(recipientId, audioURL, chatbotname, file_type):
+def facebookSendFile(recipientId, fileURL, file_type, chatbotname):
     # {'error': {'error_subcode': 2018008, 'type': 'OAuthException', 'fbtrace_id': 'DCzz4oZiIj6', 'message': '(#100) Failed to fetch the file from the url', 'code': 100}}
-    cache_path = file_url_to_chache_path("facebook", "audio", audioURL, recipientId)
+    cache_path = file_url_to_chache_path("facebook", file_type, fileURL, recipientId)
     cache_data = get_cache(cache_path)
     r = None
     payload = {}
     if cache_data:
         payload["attachment_id"] = cache_data["file_id"]
     else:
-        payload["url"] = audioURL
+        payload["url"] = fileURL
         payload["is_reusable"] = True
     if file_type == "audio":
         r = facebookSendAudioMessage(recipientId, payload, chatbotname)
+    elif file_type == "image":
+        r = facebookSendImageMessage(recipientId, payload, chatbotname)
     if r is not None:
-        set_cache(cache_path, "facebook", "audio", audioURL, r)
+        set_cache(cache_path, "facebook", file_type, fileURL, r)
 
 
 def facebookReceivedMessage(message):
@@ -232,7 +230,7 @@ def telegramSendFile(chat_id, file_url, file_type, chatbotname):
         r = telegramSendVideoMessage(chat_id, file_url, chatbotname)
     elif file_type == "voice":
         r = telegramSendVoiceMessage(chat_id, file_url, chatbotname)
-    if r is not None:
+    if r is not None and not cache_data:
         set_ok = set_cache(cache_path, "telegram", file_type, file_url, r)
     #if cache_data and not set_ok:
     #    clear_cache(cache_path)
@@ -371,11 +369,11 @@ def web(chatbotname, messenger):
                                     voice_url = extract_voice(watson_message)
                                     audio_url = extract_audio(watson_message)
                                     if img_url:
-                                        facebookSendImageMessage(recipientId, img_url, chatbotname)
+                                        facebookSendFile(recipientId, img_url, 'image', chatbotname)
                                     elif voice_url:
-                                        facebookSendAudioMessage(recipientId, voice_url, chatbotname)
+                                        facebookSendFile(recipientId, voice_url, 'voice', chatbotname)
                                     elif audio_url:
-                                        facebookSendAudioMessage(recipientId, audio_url, chatbotname)
+                                        facebookSendFile(recipientId, audio_url, 'audio', chatbotname)
                                     else:
                                         watson_message = get_external_data(watson_message)
                                         facebookSendTextMessage(recipientId, markdown_facebook(watson_message), chatbotname)
@@ -621,6 +619,7 @@ def set_cache (cache_path, platform, file_type, file_url, r):
             text_file.write(str(r_json))
         if not r_json["ok"]:
             # {'error_code': 400, 'description': 'Bad Request: wrong persistent file_id specified: Wrong padding in the string', 'ok': False}
+            # {"ok":false,"error_code":400,"description":"Bad Request: wrong file identifier/HTTP URL specified"}
             return False
         if "image" in r_json["result"]:
             file_id = r_json["result"]["image"]["file_id"]
