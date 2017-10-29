@@ -1,2 +1,2 @@
 Flask
-requests
+watson_developer_cloud
