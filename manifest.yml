@@ -1,0 +1,4 @@
+applications:
+- name: EibrielPlatform
+  host: eibrielplatform
+  memory: 128M
