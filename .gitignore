@@ -1,5 +1,8 @@
 eplatform/config/local.py
 log/*
+voice/*
+cache/*
+eplatform/static
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
