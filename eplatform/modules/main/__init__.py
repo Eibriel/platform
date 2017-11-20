@@ -486,7 +486,7 @@ def web(chatbotname, messenger):
                         if chunk: # filter out keep-alive new chunks
                             f.write(chunk)
                             #f.flush() commented by recommendation from J.F.Sebastian
-                user = app.config["CHATBOTS"][chatbotname]["watson-stt"]["username"]
+                username = app.config["CHATBOTS"][chatbotname]["watson-stt"]["username"]
                 password = app.config["CHATBOTS"][chatbotname]["watson-stt"]["password"]
                 api_url = "https://stream.watsonplatform.net/speech-to-text/api"
                 if 'VCAP_SERVICES' in os.environ:
@@ -503,7 +503,7 @@ def web(chatbotname, messenger):
                 }
                 url = "{}/v1/recognize?model=es-ES_BroadbandModel".format(api_url)
                 files = {'upload_file': open(local_filename,'rb')}
-                r = requests.post(url, headers=headers, files=files, auth=(user, password))
+                r = requests.post(url, headers=headers, files=files, auth=(username, password))
                 try:
                     sttJson = r.json()
                 except:
