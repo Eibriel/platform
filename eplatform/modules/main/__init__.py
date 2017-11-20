@@ -544,15 +544,19 @@ def get_external_data(watson_message):
                         watson_message = "La línea <strong>{}</strong> parece funcionar correctamente, el estado de la situación es {}".format(line[0], line[1])
                     else:
                         watson_message = "La línea <strong>{}</strong> tiene problemas lamentablemente. {}".format(line[0], line[1])
-    if watson_message == "[weather]":
-        watson_message = get_weather()
+    if watson_message.startswith("[weather]"):
+        watson_message = get_weather(watson_message[9:])
     return watson_message
 
-def get_weather():
+def get_weather(info="general"):
     headers = {'user-agent': "Eibriel platform"}
     #token = app.config["CHATBOTS"][chatbotname]["telegram"]["token"]
+    if info in ["general", "rain_now", "temp", "hum"]:
+        url = 'http://api.openweathermap.org/data/2.5/weather?id=3435259&units=metric&appid=36df7696a407fa7ff3b95e94be4bbe3f'
+    elif info in ["rain_future", "future"]:
+        url = 'http://api.openweathermap.org/data/2.5/forecast?id=3435259&units=metric&appid=36df7696a407fa7ff3b95e94be4bbe3f'
     try:
-        r = requests.get('http://api.openweathermap.org/data/2.5/weather?id=3435259&units=metric&appid=36df7696a407fa7ff3b95e94be4bbe3f', timeout=40, headers=headers)
+        r = requests.get(url, timeout=40, headers=headers)
     except requests.exceptions.ConnectionError:
         return "Error"
     except requests.exceptions.Timeout:
@@ -561,7 +565,18 @@ def get_weather():
         r_json = r.json()
     except:
         return "Error"
-    return "En Plaza de Mayo hace {}º, con una humedad del {}% ".format(r_json["main"]["temp"], r_json["main"]["humidity"])
+    if info=="rain_now":
+        return "Ahora mismo ..."
+    elif info=="rain_future":
+        return "Quizás llueva o quizás no ..."
+    elif info=="future":
+        return "El clima será ..."
+    elif info=="temp":
+        return "En Plaza de Mayo hace {}º".format(r_json["main"]["temp"])
+    elif info=="hum":
+        return "En Plaza de Mayo hay una humedad del {}% ".format(r_json["main"]["humidity"])
+    else:
+        return "En Plaza de Mayo hace {}º, con una humedad del {}% ".format(r_json["main"]["temp"], r_json["main"]["humidity"])
 
 def get_subway_status():
     headers = {'user-agent': "Eibriel platform"}
@@ -621,8 +636,8 @@ def set_cache (cache_path, platform, file_type, file_url, r):
             # {'error_code': 400, 'description': 'Bad Request: wrong persistent file_id specified: Wrong padding in the string', 'ok': False}
             # {"ok":false,"error_code":400,"description":"Bad Request: wrong file identifier/HTTP URL specified"}
             return False
-        if "image" in r_json["result"]:
-            file_id = r_json["result"]["image"]["file_id"]
+        if "photo" in r_json["result"]:
+            file_id = r_json["result"]["photo"][0]["file_id"]
             final_file_type = "image"
         if "audio" in r_json["result"]:
             file_id = r_json["result"]["audio"]["file_id"]
