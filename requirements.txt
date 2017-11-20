@@ -1,3 +1,4 @@
-Flask
-watson_developer_cloud
-cf-deployment-tracker
+Flask==0.12.2
+watson_developer_cloud==0.26.1
+cf-deployment-tracker==1.0.4
+cloudant==2.7.0

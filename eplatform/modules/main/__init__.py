@@ -1,8 +1,10 @@
 import os
 import re
+import json
 import hashlib
 import requests
 
+from flask import g
 from flask import abort
 from flask import request
 from flask import jsonify
@@ -12,26 +14,43 @@ from flask import Blueprint
 from werkzeug.datastructures import Headers
 
 from eplatform import app
+from eplatform import connect_db
 from eplatform.modules.watson import watson
 
-import json
 
 main = Blueprint('main', __name__)
 
-#/api/chatbot-name/telegram
-#/api/chatbot-name/facebook
-#/api/chatbot-name/kik
-#/api/chatbot-name/web
+# /api/chatbot-name/telegram
+# /api/chatbot-name/facebook
+# /api/chatbot-name/kik
+# /api/chatbot-name/web
 
-#/monitor
-#/monitor/chatbot-name
+# /monitor
+# /monitor/chatbot-name
 
 
-def callSendAPI(messageData, chatbotname, endpoint = "messages"):
+def get_db():
+    """Opens a new database connection if there is none yet for the
+    current application context.
+    """
+    if not hasattr(g, 'cloudant_db'):
+        g.cloudant_client, g.cloudant_db = connect_db()
+    return g.cloudant_db
+
+
+@app.teardown_appcontext
+def close_db(error):
+    """Closes the database again at the end of the request."""
+    if hasattr(g, 'cloudant_db'):
+        g.cloudant_client.disconnect()
+
+
+def callSendAPI(messageData, chatbotname, endpoint="messages"):
     with open("log/Output.txt", "a") as text_file:
         text_file.write("\n\n")
         text_file.write(str(messageData))
-    headers = {'user-agent': 'Eibriel Platform', 'Content-Type': 'application/json'}
+    headers = {'user-agent': 'Eibriel Platform',
+               'Content-Type': 'application/json'}
     page_access_token = app.config["CHATBOTS"][chatbotname]["facebook"]["PAGE_ACCESS_TOKEN"]
     page_id = app.config["CHATBOTS"][chatbotname]["facebook"]["PAGE_ID"]
     r = None
@@ -73,9 +92,9 @@ def facebookSendImageMessage(recipientId, payload, chatbotname):
             'id': recipientId
         },
         'message': {
-            'attachment':{
-                'type':'image',
-                'payload':payload
+            'attachment': {
+                'type': 'image',
+                'payload': payload
             }
         }
     }
@@ -89,9 +108,9 @@ def facebookSendAudioMessage(recipientId, payload, chatbotname):
             'id': recipientId
         },
         'message': {
-            'attachment':{
-                'type':'audio',
-                'payload':payload
+            'attachment': {
+                'type': 'audio',
+                'payload': payload
             }
         }
     }
@@ -101,7 +120,10 @@ def facebookSendAudioMessage(recipientId, payload, chatbotname):
 
 def facebookSendFile(recipientId, fileURL, file_type, chatbotname):
     # {'error': {'error_subcode': 2018008, 'type': 'OAuthException', 'fbtrace_id': 'DCzz4oZiIj6', 'message': '(#100) Failed to fetch the file from the url', 'code': 100}}
-    cache_path = file_url_to_chache_path("facebook", file_type, fileURL, recipientId)
+    cache_path = file_url_to_chache_path("facebook",
+                                         file_type,
+                                         fileURL,
+                                         recipientId)
     cache_data = get_cache(cache_path)
     r = None
     payload = {}
@@ -136,15 +158,15 @@ def facebookConfigureBot(chatbotname):
         },
         "greeting": [
             {
-                "locale":"default",
-                "text":"Eibriel presenta..."
+                "locale": "default",
+                "text": "Eibriel presenta..."
             }, {
-                "locale":"es_LA",
-                "text":"Eibriel presenta..."
+                "locale": "es_LA",
+                "text": "Eibriel presenta..."
             }
-        ]  
+        ]
     }
-    callSendAPI(configData, chatbotname, endpoint = "messenger_profile")
+    callSendAPI(configData, chatbotname, endpoint="messenger_profile")
 
 
 def telegramCallSendAPI(access_point, chatbotname, data=None):
@@ -171,47 +193,53 @@ def telegramSendTextMessage(chat_id, answer, chatbotname):
         'parse_mode': 'Markdown',
         'text': answer,
     }
-    telegramCallSendAPI('sendMessage', chatbotname, data = msg)
+    telegramCallSendAPI('sendMessage', chatbotname, data=msg)
+
 
 def telegramSendAudioMessage(chat_id, audio_url, chatbotname):
     msg = {
         'chat_id': chat_id,
         'audio': audio_url,
     }
-    r = telegramCallSendAPI('sendAudio', chatbotname, data = msg)
+    r = telegramCallSendAPI('sendAudio', chatbotname, data=msg)
     return r
+
 
 def telegramSendDocumentMessage(chat_id, document_url, chatbotname):
     msg = {
         'chat_id': chat_id,
         'document': document_url,
     }
-    r = telegramCallSendAPI('sendDocument', chatbotname, data = msg)
+    r = telegramCallSendAPI('sendDocument', chatbotname, data=msg)
     return r
+
 
 def telegramSendImageMessage(chat_id, image_url, chatbotname):
     msg = {
         'chat_id': chat_id,
         'photo': image_url,
     }
-    r = telegramCallSendAPI('sendPhoto', chatbotname, data = msg)
+    r = telegramCallSendAPI('sendPhoto', chatbotname, data=msg)
     return r
+
 
 def telegramSendVideoMessage(chat_id, video_url, chatbotname):
     msg = {
         'chat_id': chat_id,
         'video': video_url,
     }
-    r = telegramCallSendAPI('sendVideo', chatbotname, data = msg)
-    return r 
+    r = telegramCallSendAPI('sendVideo', chatbotname, data=msg)
+    return r
+
 
 def telegramSendVoiceMessage(chat_id, voice_url, chatbotname):
     msg = {
         'chat_id': chat_id,
         'voice': voice_url,
     }
-    r = telegramCallSendAPI('sendVoice', chatbotname, data = msg)
+    r = telegramCallSendAPI('sendVoice', chatbotname, data=msg)
     return r
+
 
 def telegramSendFile(chat_id, file_url, file_type, chatbotname):
     cache_path = file_url_to_chache_path("telegram", file_type, file_url)
@@ -232,48 +260,73 @@ def telegramSendFile(chat_id, file_url, file_type, chatbotname):
         r = telegramSendVoiceMessage(chat_id, file_url, chatbotname)
     if r is not None and not cache_data:
         set_ok = set_cache(cache_path, "telegram", file_type, file_url, r)
-    #if cache_data and not set_ok:
+    # if cache_data and not set_ok:
     #    clear_cache(cache_path)
-    #    telegramSendAudioMessage(chat_id, audio_url, chatbotname) 
+    #    telegramSendAudioMessage(chat_id, audio_url, chatbotname)
+
 
 def get_watson_response(wat, platform, chatbotname, chat_id, m):
     # Load context
-    chatbot_log_path = os.path.join("log", chatbotname)
-    if not os.path.isdir(chatbot_log_path):
-        os.mkdir(chatbot_log_path)
-    json_filename = os.path.join(chatbot_log_path, "{}.json".format(chat_id))
-
-    log = []
-    if os.path.exists(json_filename):
-        with open(json_filename) as data_file:
-            try:
-                log = json.load(data_file)
-            except:
-                pass
+    db = get_db()
+    try:
+        log = db[str(chat_id)]
+        create_log = False
+    except KeyError:
+        log = {'_id': str(chat_id), "watson_responses": []}
+        create_log = True
 
     response_context = None
-    if len(log) > 0:
-        response_context = log[-1]["context"]
+    if len(log["watson_responses"]) > 0:
+        if log["watson_responses"][-1] is not None:
+            response_context = log["watson_responses"][-1]["context"]
 
     watson_responses = []
     if m is None:
-        watson_responses.append(wat.send_to_watson ({}))
+        try:
+            watson_response = wat.send_to_watson({})
+        except:
+            print("Watson Error")
+            raise
+            abort(500)
+        watson_responses.append(watson_response)
     elif len(log) == 0:
-        watson_responses.append(wat.send_to_watson ({}))
+        try:
+            watson_response = wat.send_to_watson({})
+        except:
+            print("Watson Error")
+            raise
+            abort(500)
+        watson_responses.append(watson_response)
     else:
-        if response_context == None:
-            watson_responses.append(wat.send_to_watson ({}))
+        if response_context is None:
+            try:
+                watson_response = wat.send_to_watson({})
+            except:
+                print("Watson Error")
+                raise
+                abort(500)
+            watson_responses.append(watson_response)
             response_context = watson_responses[-1]["context"]
         else:
             response_context["platform"] = platform
             response_context["timezone"] = "America/Argentina/Buenos_Aires"
-            watson_responses.append(wat.send_to_watson ({'text': m}, response_context))
+            try:
+                watson_response = wat.send_to_watson({'text': m},
+                                                     response_context)
+                watson_responses.append(watson_response)
+            except:
+                print("Watson Error")
+                raise
+                abort(500)
 
-    #print (watson_response)
+    # print(watson_response)
 
-    log = log + watson_responses
-    with open(json_filename, 'w') as data_file:
-        json.dump(log, data_file, sort_keys=True, indent=4, separators=(',', ': '))
+    log["watson_responses"] = log["watson_responses"] + watson_responses
+
+    if create_log:
+        db.create_document(log)
+    else:
+        log.save()
     return watson_responses
 
 
@@ -300,8 +353,8 @@ def web(chatbotname, messenger):
     #
 
     wat = watson(config[chatbotname]["watson"]["username"],
-                config[chatbotname]["watson"]["password"],
-                config[chatbotname]["watson"]["workspace_id"])
+                 config[chatbotname]["watson"]["password"],
+                 config[chatbotname]["watson"]["workspace_id"])
 
     if messenger == 'web':
         if request.form.get("question") == '':
@@ -312,7 +365,11 @@ def web(chatbotname, messenger):
         chat_id = request.form.get("chat_id")
 
         messages = []
-        watson_responses = get_watson_response (wat, platform, chatbotname, chat_id, m)
+        watson_responses = get_watson_response(wat,
+                                               platform,
+                                               chatbotname,
+                                               chat_id,
+                                               m)
         for watson_response in watson_responses:
             messages = messages + watson_response["output"]["text"]
 
@@ -360,7 +417,7 @@ def web(chatbotname, messenger):
                             if m == '/start':
                                 m = None
                             if m == '/configure':
-                               facebookConfigureBot(chatbotname) 
+                               facebookConfigureBot(chatbotname)
                             watson_responses = get_watson_response (wat, platform, chatbotname, senderId, m)
                             recipientId = senderId
                             for watson_response in watson_responses:
@@ -402,11 +459,13 @@ def web(chatbotname, messenger):
             duration = msg["message"]["voice"]["duration"]
             if duration > 15:
                 answer["text"] = "Audio muy largo. Duración máxima 15 segundos"
-                return jsonify(answer) 
+                return jsonify(answer)
             fileData = {
                 "file_id": file_id
             }
-            fileJson = telegramCallSendAPI('getFile', chatbotname, data=fileData)
+            fileJson = telegramCallSendAPI('getFile',
+                                           chatbotname,
+                                           data=fileData)
             try:
                 fileJson = fileJson.json()
             except:
@@ -423,17 +482,26 @@ def web(chatbotname, messenger):
                 local_filename = "voice/{}".format(file_id)
                 r = requests.get(url, stream=True)
                 with open(local_filename, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=1024): 
+                    for chunk in r.iter_content(chunk_size=1024):
                         if chunk: # filter out keep-alive new chunks
                             f.write(chunk)
                             #f.flush() commented by recommendation from J.F.Sebastian
                 user = app.config["CHATBOTS"][chatbotname]["watson-stt"]["username"]
                 password = app.config["CHATBOTS"][chatbotname]["watson-stt"]["password"]
+                api_url = "https://stream.watsonplatform.net/speech-to-text/api"
+                if 'VCAP_SERVICES' in os.environ:
+                    vcap = json.loads(os.getenv('VCAP_SERVICES'))
+                    print('Found VCAP_SERVICES')
+                    if 'speech_to_text' in vcap:
+                        creds = vcap['speech_to_text'][0]['credentials']
+                        username = creds['username']
+                        password = creds['password']
+                        api_url = creds['url']
                 headers = {
                     'Content-Type': mime_type,
                     #'Transfer-Encoding': 'chunked'
                 }
-                url = "https://stream.watsonplatform.net/speech-to-text/api/v1/recognize?model=es-ES_BroadbandModel"
+                url = "{}/v1/recognize?model=es-ES_BroadbandModel".format(api_url)
                 files = {'upload_file': open(local_filename,'rb')}
                 r = requests.post(url, headers=headers, files=files, auth=(user, password))
                 try:
@@ -443,7 +511,7 @@ def web(chatbotname, messenger):
                 with open("log/OutputTelegram.txt", "a") as text_file:
                     text_file.write("\n\n")
                     text_file.write(str(sttJson))
-                if not "results" in sttJson:
+                if "results" not in sttJson:
                     answer["text"] = str(sttJson)
                     return jsonify(answer)
                 if len(sttJson["results"]) == 0:
@@ -451,13 +519,17 @@ def web(chatbotname, messenger):
                     return jsonify(answer)
                 transcript = sttJson["results"][0]["alternatives"][0]["transcript"]
                 msg["message"]["text"] = transcript
-                #return jsonify(answer)
-        #return jsonify({})
+                # return jsonify(answer)
+        # return jsonify({})
 
         if msg["message"]["text"] == '/start':
             msg["message"]["text"] = None
         chat_id = msg["message"]["chat"]["id"]
-        watson_responses = get_watson_response (wat, platform, chatbotname, chat_id, msg["message"]["text"])
+        watson_responses = get_watson_response(wat,
+                                               platform,
+                                               chatbotname,
+                                               chat_id,
+                                               msg["message"]["text"])
         messages = []
         for watson_response in watson_responses:
             messages = messages + watson_response["output"]["text"]
@@ -477,9 +549,10 @@ def web(chatbotname, messenger):
                 else:
                     message = get_external_data(message)
                     telegramSendTextMessage(chat_id, markdown_telegram(message), chatbotname)
-        #answer["text"] = markdown_telegram("\n\n".join(messages))
-        #return jsonify(answer)
+        # answer["text"] = markdown_telegram("\n\n".join(messages))
+        # return jsonify(answer)
         return jsonify({})
+
 
 def markdown_telegram(text):
     text = text.replace('<em>', '_')
@@ -487,6 +560,7 @@ def markdown_telegram(text):
     text = text.replace('<strong>', '*')
     text = text.replace('</strong>', '*')
     return text
+
 
 def markdown_facebook(text):
     text = text.replace('<em>', '')
@@ -500,10 +574,11 @@ def markdown_facebook(text):
         alt = get_url.group('alt')
         url = get_url.group('url')
         target = get_url.group('target')
-        text = text.replace('[{}]({}){}'.format(alt, url, target), '{} ({})'.format(alt, url))
+        text = text.replace('[{}]({}){}'.format(alt, url, target),
+                            '{} ({})'.format(alt, url))
         get_url = re.search(reg, text)
-
     return text
+
 
 def extract_image(message):
     if message.startswith("!["):
@@ -512,6 +587,7 @@ def extract_image(message):
             return get_url.group('url')
     return False
 
+
 def extract_voice(message):
     if message.startswith("¡["):
         get_url = re.search(r"\¡\[.*\]\((?P<url>.+?)\)", message)
@@ -519,12 +595,14 @@ def extract_voice(message):
             return get_url.group('url')
     return False
 
+
 def extract_audio(message):
     if message.startswith("+["):
         get_url = re.search(r"\+\[.*\]\((?P<url>.+?)\)", message)
         if get_url:
             return get_url.group('url')
     return False
+
 
 def get_external_data(watson_message):
     if watson_message.startswith("[subway_status]"):
@@ -578,6 +656,7 @@ def get_weather(info="general"):
     else:
         return "En Plaza de Mayo hace {}º, con una humedad del {}% ".format(r_json["main"]["temp"], r_json["main"]["humidity"])
 
+
 def get_subway_status():
     headers = {'user-agent': "Eibriel platform"}
     #token = app.config["CHATBOTS"][chatbotname]["telegram"]["token"]
@@ -605,15 +684,18 @@ def get_subway_status():
             line[1] = get_status.group("status")
     return statuses
 
+
 def file_url_to_chache_path(platform, file_type, file_url, chat_id = ""):
     hash = hashlib.md5("{} {} {}{}".format(platform, file_type, file_url, chat_id).encode("UTF-8")).hexdigest()
     return os.path.join("cache", hash)
 
-def clear_cache (cache_path):
+
+def clear_cache(cache_path):
     if os.path.exists(cache_path):
         os.remove(cache_path)
 
-def get_cache (cache_path):
+
+def get_cache(cache_path):
     cache_data = None
     if os.path.exists(cache_path):
         with open(cache_path) as data_file:
@@ -623,7 +705,8 @@ def get_cache (cache_path):
                 pass
     return cache_data
 
-def set_cache (cache_path, platform, file_type, file_url, r):
+
+def set_cache(cache_path, platform, file_type, file_url, r):
     try:
         r_json = r.json()
     except:
@@ -651,7 +734,7 @@ def set_cache (cache_path, platform, file_type, file_url, r):
         if "document" in r_json["result"]:
             file_id = r_json["result"]["document"]["file_id"]
             final_file_type = "document"
-        #if file_type != final_file_type:
+        # if file_type != final_file_type:
         #    return False
     if platform == "facebook":
         with open("log/Output.txt", "a") as text_file:
@@ -671,5 +754,9 @@ def set_cache (cache_path, platform, file_type, file_url, r):
         "file_type": final_file_type
     }
     with open(cache_path, 'w') as data_file:
-        json.dump(cache_data, data_file, sort_keys=True, indent=4, separators=(',', ': '))
+        json.dump(cache_data,
+                  data_file,
+                  sort_keys=True,
+                  indent=4,
+                  separators=(',', ': '))
     return True

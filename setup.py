@@ -18,7 +18,7 @@ setup(
     name='python-eibrielplatform-flask',
     version='1.0.0',
     description='Eibriel Platfor for Conversational Experiences',
-    long_description=long_description,
+    long_description=description,
     url='https://github.com/Eibriel/platform',
     license='GNU General Public License v3.0'
 )
